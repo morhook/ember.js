@@ -9,11 +9,11 @@ import { get } from 'ember-metal/property_get';
 import { runLoadHooks } from 'ember-runtime/system/lazy_load';
 import run from 'ember-metal/run_loop';
 import Controller from 'ember-runtime/controllers/controller';
-import { Renderer } from 'ember-metal-views';
-import DOMHelper from 'ember-htmlbars/system/dom-helper';
+import HTMLBarsDOMHelper from 'ember-htmlbars/system/dom-helper';
+import * as HTMLBarsRenderer from 'ember-metal-views';
 import topLevelViewTemplate from 'ember-htmlbars/templates/top-level-view';
 import SelectView from 'ember-views/views/select';
-import { OutletView } from 'ember-routing-views/views/outlet';
+import { OutletView as HTMLBarsOutletView } from 'ember-routing-views/views/outlet';
 import EmberView from 'ember-views/views/view';
 import EventDispatcher from 'ember-views/system/event_dispatcher';
 import jQuery from 'ember-views/system/jquery';
@@ -37,8 +37,11 @@ import { buildFakeRegistryWithDeprecations } from 'ember-runtime/mixins/registry
 import environment from 'ember-metal/environment';
 import RSVP from 'ember-runtime/ext/rsvp';
 import Engine from './engine';
+import require from 'require';
 
-topLevelViewTemplate.meta.revision = 'Ember@VERSION_STRING_PLACEHOLDER';
+if (!isEnabled('ember-glimmer')) {
+  topLevelViewTemplate.meta.revision = 'Ember@VERSION_STRING_PLACEHOLDER';
+}
 
 var librariesRegistered = false;
 
@@ -606,6 +609,12 @@ const Application = Engine.extend({
   _bootSync() {
     if (this._booted) { return; }
 
+    if (isEnabled('ember-glimmer')) {
+      console.log('woot. we haz glimmer.');
+    } else {
+      console.log('something is wrong. plz contact your system administrator to get glimmer.');
+    }
+
     if (Ember.ENV._ENABLE_LEGACY_VIEW_SUPPORT && !warnedAboutLegacyViewAddon) {
       deprecate(
         'Support for the `ember-legacy-views` addon will end soon, please remove it from your application.',
@@ -1073,26 +1082,67 @@ Application.reopenClass({
 
     registry.optionsForType('component', { singleton: false });
     registry.optionsForType('view', { singleton: false });
-    registry.optionsForType('template', { instantiate: false });
+
+    if (isEnabled('ember-glimmer')) {
+      let Environment = require('ember-glimmer/environment').default;
+      registry.register('service:-glimmer-environment', Environment);
+      registry.injection('service:-glimmer-environment', 'dom', 'service:-dom-helper');
+      registry.injection('renderer', 'env', 'service:-glimmer-environment');
+    } else {
+      registry.optionsForType('template', { instantiate: false });
+    }
+    registry.injection('renderer', 'dom', 'service:-dom-helper');
 
     registry.register('application:main', namespace, { instantiate: false });
 
     registry.register('controller:basic', Controller, { instantiate: false });
 
-    registry.register('renderer:-dom', { create() { return new Renderer(new DOMHelper()); } });
-
-    registry.injection('view', 'renderer', 'renderer:-dom');
     if (Ember.ENV._ENABLE_LEGACY_VIEW_SUPPORT) {
       registry.register('view:select', SelectView);
     }
+    let OutletView;
+    if (isEnabled('ember-glimmer')) {
+      OutletView = require('ember-glimmer/ember-routing-view').OutletView;
+    } else {
+      OutletView = HTMLBarsOutletView;
+    }
     registry.register('view:-outlet', OutletView);
+
+    let InteractiveRenderer, InertRenderer;
+    if (isEnabled('ember-glimmer')) {
+      ({ InteractiveRenderer, InertRenderer } = require('ember-glimmer/ember-metal-views'));
+    } else {
+      ({ InteractiveRenderer, InertRenderer } = HTMLBarsRenderer);
+    }
+    registry.register('renderer:-dom', InteractiveRenderer);
+    registry.register('renderer:-inert', InertRenderer);
+
+    let DOMHelper;
+    if (isEnabled('ember-glimmer')) {
+      DOMHelper = require('ember-glimmer/dom').default;
+    } else {
+      DOMHelper = HTMLBarsDOMHelper;
+    }
+    registry.register('service:-dom-helper', {
+      create({ document }) { return new DOMHelper(document); }
+    });
+    registry.injection('service:-dom-helper', 'document', 'service:-document');
 
     registry.register('-view-registry:main', { create() { return {}; } });
 
     registry.injection('view', '_viewRegistry', '-view-registry:main');
 
     registry.register('view:toplevel', EmberView.extend());
-    registry.register('template:-outlet', topLevelViewTemplate);
+    if (isEnabled('ember-glimmer')) {
+      let glimmerOutletTemplate = require('ember-glimmer/templates/outlet').default;
+      registry.register('template:-outlet', glimmerOutletTemplate);
+      registry.injection('view:-outlet', 'template', 'template:-outlet');
+
+      registry.injection('template', 'env', 'service:-glimmer-environment');
+    } else {
+      registry.register('template:-outlet', topLevelViewTemplate);
+    }
+
     registry.injection('route', '_topLevelViewTemplate', 'template:-outlet');
 
     registry.register('route:basic', Route, { instantiate: false });

@@ -1,6 +1,6 @@
 import packageName from './package-name';
 import Environment from './environment';
-import { compile, helper, Helper, DOMHelper, Renderer } from './helpers';
+import { compile, helper, Helper, DOMHelper, InteractiveRenderer } from './helpers';
 import { equalsElement, equalTokens, regex, classes } from './test-helpers';
 import run from 'ember-metal/run_loop';
 import { runAppend, runDestroy } from 'ember-runtime/tests/utils';
@@ -195,7 +195,6 @@ export class ApplicationTest extends TestCase {
     });
 
     this.applicationInstance = null;
-    this.bootOptions = undefined;
   }
 
   teardown() {
@@ -207,12 +206,12 @@ export class ApplicationTest extends TestCase {
   }
 
   visit(url) {
-    let { applicationInstance, bootOptions } = this;
+    let { applicationInstance } = this;
 
     if (applicationInstance) {
-      return run(applicationInstance, 'visit', url, bootOptions);
+      return run(applicationInstance, 'visit', url);
     } else {
-      return run(this.application, 'visit', url, bootOptions).then(instance => {
+      return run(this.application, 'visit', url).then(instance => {
         this.applicationInstance = instance;
       });
     }
@@ -236,8 +235,8 @@ export class RenderingTest extends TestCase {
     super();
     let dom = new DOMHelper(document);
     let owner = this.owner = buildOwner();
-    let env = this.env = new Environment({ dom, owner });
-    this.renderer = new Renderer(dom, { destinedForDOM: true, env });
+    let env = this.env = new Environment({ dom, owner, [OWNER]: owner });
+    this.renderer = InteractiveRenderer.create({ dom, env, [OWNER]: owner });
     this.element = jQuery('#qunit-fixture')[0];
     this.component = null;
   }
