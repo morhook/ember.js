@@ -6,6 +6,7 @@
     "ember-addon"
   ],
   "scripts": {
+    "postinstall": "bower install",
     "build": "ember build --environment production",
     "pretest": "ember build",
     "test": "bin/run-tests.js",
